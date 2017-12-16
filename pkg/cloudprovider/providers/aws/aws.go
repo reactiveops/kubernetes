@@ -2137,12 +2137,28 @@ func (c *Cloud) CreateDisk(volumeOptions *VolumeOptions) (KubernetesVolumeID, er
 		return "", fmt.Errorf("invalid AWS VolumeType %q", volumeOptions.VolumeType)
 	}
 
+	var volTags []*ec2.Tag
+	for k, v := range volumeOptions.Tags {
+		tag := &ec2.Tag{
+			Key:   aws.String(k),
+			Value: aws.String(v),
+		}
+		volTags = append(volTags, tag)
+	}
+
+	ts := &ec2.TagSpecification{}
+	ts.ResourceType = aws.String("volume")
+	ts.Tags = volTags
+	awsTs := []*ec2.TagSpecification{}
+	awsTs = append(awsTs, ts)
+
 	// TODO: Should we tag this with the cluster id (so it gets deleted when the cluster does?)
 	request := &ec2.CreateVolumeInput{}
 	request.AvailabilityZone = aws.String(createAZ)
 	request.Size = aws.Int64(int64(volumeOptions.CapacityGB))
 	request.VolumeType = aws.String(createType)
 	request.Encrypted = aws.Bool(volumeOptions.Encrypted)
+	request.TagSpecifications = awsTs
 	if len(volumeOptions.KmsKeyId) > 0 {
 		if missing, err := c.checkEncryptionKey(volumeOptions.KmsKeyId); err != nil {
 			if missing {
@@ -2170,15 +2186,15 @@ func (c *Cloud) CreateDisk(volumeOptions *VolumeOptions) (KubernetesVolumeID, er
 	volumeName := KubernetesVolumeID("aws://" + aws.StringValue(response.AvailabilityZone) + "/" + string(awsID))
 
 	// apply tags
-	if err := c.tagging.createTags(c.ec2, string(awsID), ResourceLifecycleOwned, volumeOptions.Tags); err != nil {
-		// delete the volume and hope it succeeds
-		_, delerr := c.DeleteDisk(volumeName)
-		if delerr != nil {
-			// delete did not succeed, we have a stray volume!
-			return "", fmt.Errorf("error tagging volume %s, could not delete the volume: %q", volumeName, delerr)
-		}
-		return "", fmt.Errorf("error tagging volume %s: %q", volumeName, err)
-	}
+	//if err := c.tagging.createTags(c.ec2, string(awsID), ResourceLifecycleOwned, volumeOptions.Tags); err != nil {
+	//	// delete the volume and hope it succeeds
+	//	_, delerr := c.DeleteDisk(volumeName)
+	//	if delerr != nil {
+	//		// delete did not succeed, we have a stray volume!
+	//		return "", fmt.Errorf("error tagging volume %s, could not delete the volume: %q", volumeName, delerr)
+	//	}
+	//	return "", fmt.Errorf("error tagging volume %s: %q", volumeName, err)
+	//}
 
 	return volumeName, nil
 }
